@@ -1,0 +1,27 @@
+{
+  "name": "ts-jsdoc-transformer",
+  "version": "0.0.1",
+  "main": "dist/index.js",
+  "scripts": {
+    "pretty": "standard --fix src/*",
+    "prepublish": "tsc"
+  },
+  "keywords": [
+    "typescript",
+    "transform",
+    "transformer",
+    "Closure Compiler",
+    "closure-compiler",
+    "google-closure-compiler",
+    "Google Closure Compiler",
+    "jsdoc"
+  ],
+  "author": "Elad Yosifon",
+  "license": "MIT",
+  "devDependencies": {
+    "ts-node": "7.0.1",
+    "typescript": "3.1.6",
+    "typescript-eslint-parser": "20.1.1"
+  },
+  "dependencies": {}
+}
