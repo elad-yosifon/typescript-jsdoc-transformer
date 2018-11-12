@@ -54,7 +54,7 @@ function jsDocFunctionParameters(node: ts.Node): string[] {
   const jsdocLines = [];
   if (!(ts.isInterfaceDeclaration(node) || ts.isClassDeclaration(node)) &&
     (ts.isMethodSignature(node) || ts.isConstructSignatureDeclaration(node) || ts.isFunctionDeclaration(node))) {
-    if(node.parameters) {
+    if (node.parameters) {
       for (const param of node.parameters) {
         if (ts.isIdentifier(param.name)) {
           if (ts.isTypeNode(param.type)) {
@@ -79,6 +79,38 @@ function jsDocGenericsTemplate(node: ts.Node): string[] {
   return jsdocLines;
 }
 
+function jsDocImplementsExtendsInterfaces(node: ts.Node): string[] {
+  const jsdocLines = [];
+  if (ts.isClassDeclaration(node)) {
+    if (node.heritageClauses) {
+      for (const heritageClauses of node.heritageClauses) {
+        for (const type of heritageClauses.types) {
+          const typeArguments = [];
+          if (ts.isExpressionWithTypeArguments(type)) {
+            const expression = ts.isIdentifier(type.expression) ? type.expression.escapedText : '';
+            if (type.typeArguments && type.typeArguments.length > 0) {
+              type.typeArguments.forEach(typeArg => {
+                typeArguments.push(`${expression}<${typeToString(typeArg)}>`);
+              })
+            } else {
+              typeArguments.push(`${expression}`);
+            }
+          }
+          jsdocLines.push(`@${heritageClauses.token == ts.SyntaxKind.ImplementsKeyword ? 'implements' : 'extends'} {${typeArguments.join(', ')}}`)
+        }
+      }
+    }
+  }
+  return jsdocLines;
+}
+
+function jsDocAbstractClass(node: ts.Node): string | null {
+  if (ts.isClassDeclaration(node) && (ts.getCombinedModifierFlags(node) & ts.ModifierFlags.Abstract) > 0) {
+    return '@abstract'
+  }
+  return null
+}
+
 function generateJsDocLines(node: ts.Node, headers: string[]): string[] {
   return [
 
@@ -86,6 +118,12 @@ function generateJsDocLines(node: ts.Node, headers: string[]): string[] {
 
     // @template
     ... jsDocGenericsTemplate(node),
+
+    // @abstract
+    jsDocAbstractClass(node),
+
+    // @implements
+    ... jsDocImplementsExtendsInterfaces(node),
 
     // @param
     ...jsDocFunctionParameters(node),
