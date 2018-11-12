@@ -30,29 +30,82 @@ function kindToString(kind: ts.SyntaxKind) {
   return ''
 }
 
-function typeToString(type:ts.TypeReferenceNode & ts.TypeNode) {
-  return type.typeName ? type.typeName.escapedText : kindToString(type.kind);
+function typeToString(type: ts.TypeNode) {
+  if (ts.isTypeReferenceNode(type) && ts.isIdentifier(type.typeName)) {
+    return type.typeName.escapedText;
+  } else {
+    return kindToString(type.kind);
+  }
+}
+
+function jsDocReturns(child: ts.Node): string | null {
+  if (ts.isMethodSignature(child) || ts.isConstructSignatureDeclaration(child)) {
+    if (child.type.kind == ts.SyntaxKind.VoidKeyword) {
+    } else if (ts.isUnionTypeNode(child) || ts.isIntersectionTypeNode(child)) {
+      return `@return {${child.types.map(typeToString).join(ts.isUnionTypeNode(child) ? '|' : '&')}}`;
+    } else {
+      return `@return {${typeToString(child.type)}}`;
+    }
+  }
+  return null
+}
+
+function jsDocFunctionParameters(node: ts.Node): string[] {
+  const jsdocLines = [];
+  if (!(ts.isInterfaceDeclaration(node) || ts.isClassDeclaration(node)) &&
+    (ts.isMethodSignature(node) || ts.isConstructSignatureDeclaration(node) || ts.isFunctionDeclaration(node))) {
+    if(node.parameters) {
+      for (const param of node.parameters) {
+        if (ts.isIdentifier(param.name)) {
+          if (ts.isTypeNode(param.type)) {
+            jsdocLines.push(`@param {${typeToString(param.type)}} ${param.name.escapedText}`)
+          } else {
+            jsdocLines.push(`@param ${param.name.escapedText}`)
+          }
+        }
+      }
+    }
+  }
+  return jsdocLines
+}
+
+function jsDocGenericsTemplate(node: ts.Node): string[] {
+  const jsdocLines = [];
+  if (ts.isClassDeclaration(node) || ts.isInterfaceDeclaration(node)) {
+    if (node.typeParameters && node.typeParameters.length > 0) {
+      jsdocLines.push('@template ' + (node.typeParameters.map(typedParam => typedParam.name.escapedText).join(', ')))
+    }
+  }
+  return jsdocLines;
+}
+
+function generateJsDocLines(node: ts.Node, headers: string[]): string[] {
+  return [
+
+    ...headers,
+
+    // @template
+    ... jsDocGenericsTemplate(node),
+
+    // @param
+    ...jsDocFunctionParameters(node),
+
+    // @returns
+    jsDocReturns(node)
+
+  ].filter(str => str);
 }
 
 function createMethodDeclaration(child: ts.MethodSignature, fullyQualifiedMethodName) {
+
   const methodDeclaration = ts.createVariableDeclaration(fullyQualifiedMethodName, N,
     ts.createFunctionExpression(N, N, N, N, child.parameters, N, ts.createBlock(N))
   );
-  const jsdocLines = child.parameters
-    .map(param => `@param {${typeToString(param.type)}} ${param.name.escapedText}`)
-  if (child.type) {
-    if (child.type.kind == ts.SyntaxKind.VoidKeyword) {
-    } else if (child.type.kind == ts.SyntaxKind.UnionType) {
-      jsdocLines.push(`@return {${child.type.types.map(type=>kindToString(type.kind)).join('|')}}`);
-    } else if (child.type.kind == ts.SyntaxKind.IntersectionType) {
-      jsdocLines.push(`@return {${child.type.types.map(type=>kindToString(type.kind)).join('&')}}`);
-    }else{
-      jsdocLines.push(`@return {${typeToString(child.type)}}`);
-    }
-  }
-  addJsDoc(methodDeclaration, jsdocLines);
+
+  addJsDoc(methodDeclaration, generateJsDocLines(child, []));
   return methodDeclaration;
 }
+
 
 function addInterfaceJSDoc(node: ts.InterfaceDeclaration) {
   const ifcDeclaration = ts.createFunctionDeclaration(N, N, N, node.name, N, N, N, ts.createBlock(N));
@@ -64,12 +117,17 @@ function addInterfaceJSDoc(node: ts.InterfaceDeclaration) {
     }
   })
 
-  const jsdocLines = ['@record'];
-  if (node.typeParameters && node.typeParameters.length > 0) {
-    jsdocLines.push('@template ' + (node.typeParameters.map(typedParam => typedParam.name.escapedText).join(', ')))
-  }
+  const jsdocLines = generateJsDocLines(node, ['@record']);
   addJsDoc(ifcDeclaration, jsdocLines);
   return [ifcDeclaration, ...interfacePrototypeMethods]
+}
+
+
+function addClassJSDoc(node: ts.ClassDeclaration) {
+
+  const jsdocLines = generateJsDocLines(node, ['@constructor']);
+  addJsDoc(node, jsdocLines);
+  return node
 }
 
 function simpleTransformer<T extends ts.Node>(): ts.TransformerFactory<T> {
@@ -77,6 +135,9 @@ function simpleTransformer<T extends ts.Node>(): ts.TransformerFactory<T> {
     const visit: ts.Visitor = (node) => {
       if (ts.isInterfaceDeclaration(node)) {
         return addInterfaceJSDoc(node);
+      }
+      if (ts.isClassDeclaration(node)) {
+        return addClassJSDoc(node);
       }
       return ts.visitEachChild(node, (child) => visit(child), context)
     };
